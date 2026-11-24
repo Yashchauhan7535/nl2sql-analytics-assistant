@@ -254,9 +254,6 @@ Access the application at `http://localhost:8501`.
 
 ```
 nl2sql-analytics-assistant/
-├── .github/
-│   └── workflows/
-│       └── ci.yml             # GitHub Actions automated test & eval CI pipeline
 ├── evals/
 │   ├── questions.csv          # 30 curated question & gold-SQL benchmark cases
 │   ├── run_evals.py           # Evaluation runner reporting accuracy & failures
