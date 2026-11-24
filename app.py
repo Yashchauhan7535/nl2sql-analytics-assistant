@@ -5,7 +5,7 @@ import pandas as pd
 
 from src.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_BASE_URL, DATABASE_PATH
 from src.db import get_database_schema, execute_query, get_connection
-from src.generator import generate_sql
+from src.generator import generate_sql, is_placeholder_key
 from src.validator import validate_sql
 from src.visualizer import recommend_chart
 
@@ -23,7 +23,10 @@ SAMPLE_QUESTIONS = [
     "List the top 10 sellers by total sales value.",
     "What percentage of orders are delivered versus canceled?",
     "What is the average freight value by customer state?",
-    "Which product categories have the highest average review scores?"
+    "Which product categories have the highest average review scores?",
+    "What is the total number of delivered orders?",
+    "What is the breakdown of order payments by payment type?",
+    "What is the average order value for delivered orders?"
 ]
 
 def check_db_ready(db_path: str) -> bool:
@@ -40,15 +43,30 @@ def check_db_ready(db_path: str) -> bool:
         return False
 
 db_ready = check_db_ready(DATABASE_PATH)
+has_valid_api_key = not is_placeholder_key(OPENAI_API_KEY)
 
 st.title("📊 NL2SQL Analytics Assistant")
 st.caption("Ask natural-language business questions about the Olist e-commerce store. Powered by LLM-generated, validated read-only SQLite SQL.")
 
 with st.sidebar:
     st.header("⚙️ Configuration")
-    api_key_input = st.text_input("OpenAI API Key", value=OPENAI_API_KEY, type="password")
-    model_choice = st.selectbox("Model", ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"], index=0)
-    base_url_input = st.text_input("API Base URL", value=OPENAI_BASE_URL)
+    demo_mode = st.toggle("🧪 Demo Mode (No API Key Required)", value=not has_valid_api_key)
+
+    if not demo_mode:
+        api_key_input = st.text_input(
+            "OpenAI API Key",
+            value="" if is_placeholder_key(OPENAI_API_KEY) else OPENAI_API_KEY,
+            type="password",
+            placeholder="sk-proj-..."
+        )
+        model_choice = st.selectbox("Model", ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"], index=0)
+        base_url_input = st.text_input("API Base URL", value=OPENAI_BASE_URL)
+    else:
+        st.info("Demo Mode active: Uses the pre-verified benchmark catalog of e-commerce queries. Perfect for exploring tables, charts, and SQL validation without an API key.")
+        api_key_input = ""
+        model_choice = "demo-benchmark"
+        base_url_input = OPENAI_BASE_URL
+
     current_db_path = st.text_input("Database Path", value=DATABASE_PATH)
 
     st.divider()
@@ -85,8 +103,8 @@ if run_button:
         st.error("Database is not ready. Please run `python setup_db.py` first.")
     else:
         active_api_key = api_key_input.strip() or OPENAI_API_KEY
-        if not active_api_key:
-            st.error("Missing OpenAI API key. Provide one in the sidebar or in your `.env` file.")
+        if not demo_mode and is_placeholder_key(active_api_key):
+            st.error("⚠️ OpenAI API key is missing or still set to the placeholder `your-api-key-here`. Please enter your actual OpenAI API key in the sidebar, or enable 'Demo Mode' to try sample queries without a key.")
         else:
             with st.spinner("Analyzing schema and generating SQL query..."):
                 t0 = time.time()
@@ -96,11 +114,14 @@ if run_button:
                     schema_str=schema_str,
                     api_key=active_api_key,
                     model=model_choice,
-                    base_url=base_url_input
+                    base_url=base_url_input,
+                    demo_mode=demo_mode
                 )
 
             if gen_err:
                 st.error(f"Generation Error: {gen_err}")
+                if "API key" in gen_err or "Authentication failed" in gen_err:
+                    st.info("💡 You can toggle 'Demo Mode' in the sidebar to run sample questions without an API key.")
             else:
                 is_valid, val_err, cleaned_sql = validate_sql(raw_sql, current_db_path)
 
